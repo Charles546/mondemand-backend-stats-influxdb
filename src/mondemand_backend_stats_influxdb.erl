@@ -131,7 +131,7 @@ create (Config) ->
 
 send ({Url, Timeout}, Data) ->
   case
-    lhttpc:request(Url, "POST",[], Data, Timeout) of
+    lhttpc:request(Url, "POST",[], Data, Timeout, [{max_connections, 256}]) of
       {ok, {{200,_},_,_}} ->
         ok;
       E -> error_logger:error_msg ("influx responded with ~p",[E]),
