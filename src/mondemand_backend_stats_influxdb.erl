@@ -13,8 +13,8 @@
 %% mondemand_server_backend callbacks
 -export ([ start_link/1,
            process/1,
-           stats/0,
-           required_apps/0
+           required_apps/0,
+           type/0
          ]).
 
 %% mondemand_backend_stats_handler callbacks
@@ -38,11 +38,11 @@ process (Event) ->
   mondemand_backend_worker_pool_sup:process
     (mondemand_backend_stats_influxdb_worker_pool, Event).
 
-stats () ->
-  dict:new ().
-
 required_apps () ->
-  [ crypto, public_key, ssl, lhttpc, sidejob ].
+  [ crypto, public_key, ssl, lhttpc ].
+
+type () ->
+  supervisor.
 
 %%====================================================================
 %% supervisor callbacks

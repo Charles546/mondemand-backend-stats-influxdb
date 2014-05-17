@@ -1,3 +1,6 @@
+* Sat May 17 2014 Anthony Molinaro <anthonym@alumni.caltech.edu> 0.1.1
+- forgot about type/0 in the behaviour
+
 * Sat May 17 2014 Anthony Molinaro <anthonym@alumni.caltech.edu> 0.1.0
 - update to match new behaviour
 
