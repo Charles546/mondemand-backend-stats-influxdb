@@ -1,6 +1,6 @@
 -module (mondemand_backend_stats_influxdb).
 
--behaviour (gen_server).
+-behaviour (supervisor).
 -behaviour (mondemand_server_backend).
 -behaviour (mondemand_backend_stats_handler).
 -behaviour (mondemand_backend_worker).
@@ -25,65 +25,49 @@
            handle_response/2
          ]).
 
-%% gen_server callbacks
--export ([ init/1,
-           handle_call/3,
-           handle_cast/2,
-           handle_info/2,
-           terminate/2,
-           code_change/3
-         ]).
-
--record (state, { sidejob, stats = dict:new () }).
+%% supervisor callbacks
+-export ([ init/1 ]).
 
 %%====================================================================
 %% mondemand_server_backend callbacks
 %%====================================================================
 start_link (Config) ->
-  gen_server:start_link ( { local, ?MODULE }, ?MODULE, Config, []).
+  supervisor:start_link ( { local, ?MODULE }, ?MODULE, [Config]).
 
 process (Event) ->
-  mondemand_backend_connection_pool:cast (?MODULE, {process, Event}).
+  mondemand_backend_worker_pool_sup:process
+    (mondemand_backend_stats_influxdb_worker_pool, Event).
 
 stats () ->
-  gen_server:call (?MODULE, {stats}).
+  dict:new ().
 
 required_apps () ->
   [ crypto, public_key, ssl, lhttpc, sidejob ].
 
 %%====================================================================
-%% gen_server callbacks
+%% supervisor callbacks
 %%====================================================================
-init (Config) ->
-  Limit = proplists:get_value (limit, Config, 10),
-  Number = proplists:get_value (number, Config, undefined),
-
-  { ok, Proc } =
-    mondemand_backend_connection_pool:init (
-      [?MODULE, Limit, Number, mondemand_backend_worker]),
-  { ok, #state { sidejob = Proc } }.
-
-handle_call ({stats}, _From, State) ->
-  Stats = mondemand_backend_connection_pool:stats (?MODULE),
-  { reply, Stats, State };
-handle_call (Request, From, State) ->
-  error_logger:warning_msg ("~p : Unrecognized call ~p from ~p~n",
-                            [?MODULE, Request, From]),
-  { reply, ok, State }.
-
-handle_cast (Request, State) ->
-  error_logger:warning_msg ("~p : Unrecognized cast ~p~n",[?MODULE, Request]),
-  { noreply, State }.
-
-handle_info (Request, State) ->
-  error_logger:warning_msg ("~p : Unrecognized info ~p~n",[?MODULE, Request]),
-  {noreply, State}.
-
-terminate (_Reason, #state { }) ->
-  ok.
-
-code_change (_OldVsn, State, _Extra) ->
-  {ok, State}.
+init ([Config]) ->
+  Number = proplists:get_value (number, Config, 16), % FIXME: replace default
+  { ok,
+    {
+      {one_for_one, 10, 10},
+      [
+        { mondemand_backend_stats_influxdb_worker_pool,
+          { mondemand_backend_worker_pool_sup, start_link,
+            [ mondemand_backend_stats_influxdb_worker_pool,
+              mondemand_backend_worker,
+              Number,
+              ?MODULE ]
+          },
+          permanent,
+          2000,
+          supervisor,
+          [ ]
+        }
+      ]
+    }
+  }.
 
 %%====================================================================
 %% mondemand_backend_stats_handler callbacks
