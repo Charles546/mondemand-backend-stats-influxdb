@@ -7,6 +7,8 @@
 
 %% mondemand_backend_worker callbacks
 -export ([ create/1,
+           connected/1,
+           connect/1,
            send/2,
            destroy/1 ]).
 
@@ -28,6 +30,11 @@
 %% supervisor callbacks
 -export ([ init/1 ]).
 
+-record (state, { url,
+                  timeout }).
+
+-compile({parse_transform, ct_expand}).
+
 %%====================================================================
 %% mondemand_server_backend callbacks
 %%====================================================================
@@ -39,7 +46,7 @@ process (Event) ->
     (mondemand_backend_stats_influxdb_worker_pool, Event).
 
 required_apps () ->
-  [ crypto, public_key, ssl, lhttpc ].
+  [ crypto, public_key, ssl, lhttpc, lwes, mondemand ].
 
 type () ->
   supervisor.
@@ -72,34 +79,30 @@ init ([Config]) ->
 %%====================================================================
 %% mondemand_backend_stats_handler callbacks
 %%====================================================================
-header () -> "[".
+header () -> "".
 
-separator () -> ",\n".
+separator () -> "\n".
 
 format_stat (_Num, _Total, Prefix, ProgId, Host,
              MetricType, MetricName, MetricValue, Timestamp, Context) ->
   _ActualPrefix = case Prefix of undefined -> ""; _ -> [ Prefix, "." ] end,
-  {ContextKeys, ContextValues} =
+  ContextStr =
     case Context of
-      [] -> {"",""};
+      [] -> "";
       L when is_list (L) ->
-        lists:foldl (
-          fun ({K, V}, {CK, CV}) -> {[CK,",\"",K,"\""], [CV,",\"",V,"\""]} end,
-          { "", "" },
-          Context
-        )
+        [",",mondemand_server_util:join ([[K,"=",V] || {K, V} <- L ],",")]
     end,
-  [ "{\"name\":\"",MetricName,"\",",
-    "\"columns\":[\"time\",\"value\",\"type\",\"program_id\",\"host\"", ContextKeys,"],",
-    "\"points\":[[",io_lib:fwrite ("~b,~b",[Timestamp,MetricValue]),",",
-                  "\"",MetricType,"\",",
-                  "\"",ProgId,"\",",
-                  "\"",Host,"\"",
-                  ContextValues,
-               "]]"
-    "}" ].
+  Line =
+    [ normalize_metric_name(MetricName),
+      ",program_id=",normalize_program_id(ProgId),
+      ",host=",Host,
+      ",type=",atom_to_list (MetricType),
+      ContextStr,
+      " value=",io_lib:fwrite ("~b ~b",[MetricValue, Timestamp])
+    ],
+  { ok, Line, 1, 0 }.
 
-footer () -> "]\n".
+footer () -> "".
 
 handle_response (Response, _Previous) ->
   error_logger:info_msg ("~p : got unexpected response ~p",[?MODULE, Response]),
@@ -111,17 +114,34 @@ handle_response (Response, _Previous) ->
 create (Config) ->
   Url = proplists:get_value (url, Config),
   Timeout = proplists:get_value (timeout, Config),
-  { Url, Timeout }.
+  {ok, #state { url = Url, timeout = Timeout }}.
 
-send ({Url, Timeout}, Data) ->
+connected (#state { url = undefined }) -> false;
+connected (_) -> true.
+
+connect (State) -> {ok, State}.
+
+send (State = #state {url = Url, timeout = Timeout}, Data) ->
   case catch lhttpc:request
          (Url, "POST",[], Data, Timeout, [{max_connections, 256}])
   of
-    {ok, {{200,_},_,_}} ->
-      ok;
-    E -> error_logger:error_msg ("influx responded with ~p",[E]),
-      error
+    {ok, {{204,_},_,_}} ->
+      { ok, State };
+    E ->
+      error_logger:error_msg ("influx responded with ~p",[E]),
+      { error, State }
   end.
 
 destroy (_) ->
   ok.
+
+normalize_program_id (ProgId) ->
+  % limit the character set for program_id's to alphanumeric, '_' and '.'
+  {ok, RE} = ct_expand:term (re:compile ("[^a-zA-Z0-9_\\.]")),
+  re:replace (ProgId, RE, <<"_">>, [global,{return,binary}]).
+
+normalize_metric_name (MetricName) ->
+  % limit the character set for metric names to alphanumeric and '_'
+  {ok, RE} = ct_expand:term (re:compile ("[^a-zA-Z0-9_]")),
+  % any non-alphanumeric or '_' characters are replaced by '_'
+  re:replace (MetricName, RE, <<"_">>,[global,{return,binary}]).

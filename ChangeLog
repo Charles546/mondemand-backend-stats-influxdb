@@ -1,3 +1,6 @@
+* Mon Apr 11 2016 Anthony Molinaro <anthonym@alumni.caltech.edu> 0.3.0
+- update to deal with newer influx line protocol
+
 * Wed Apr 01 2015 Anthony Molinaro <anthonym@alumni.caltech.edu> 0.2.0
 - update to deal with mondemand_server_stats_handler changes
 
