@@ -1,3 +1,6 @@
+* Thu May 12 2016 Anthony Molinaro <anthonym@alumni.caltech.edu> 0.4.0
+- update deps
+
 * Mon Apr 11 2016 Anthony Molinaro <anthonym@alumni.caltech.edu> 0.3.0
 - update to deal with newer influx line protocol
 
